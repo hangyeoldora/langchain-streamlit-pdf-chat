@@ -106,7 +106,7 @@ def create_sidebar():
 
         if pdf_docs is not None and not st.session_state.get("pdf_uploaded", False):
             st.session_state["pdf_uploaded"] = True
-            with st.spinner("Processing your PDF..."):
+            with st.spinner("pdf 처리중"):
                 try:
                     pdf_reader = PdfReader(pdf_docs)
                     text = ""
