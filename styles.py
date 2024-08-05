@@ -52,10 +52,27 @@ h1 {
 .stButton button {
     color: #000;
 }
+.stMarkdown p {
+    color: #fff
+}
 
 .stFileUploaderFileName {
     color: #000;
 }
+.stSpinner p {
+    color: #fff;
+}
+[data-testid="stHorizontalBlock"] {
+        background-color: #ffffff;  /* 흰색 배경 */
+        padding: 20px;  /* 패딩 */
+        border-radius: 10px;  /* 모서리 둥글기 */
+        box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.1);  /* 그림자 */
+        margin-top: 20px;  /* 상단 여백 */
+}
+[data-testid="stHorizontalBlock"] .st-emotion-cache-1wivap2 {
+    color: #000;
+}
+
 
 [data-testid="stBottom"] .st-emotion-cache-uhkwx6{
     border-top: 2px solid #fff;

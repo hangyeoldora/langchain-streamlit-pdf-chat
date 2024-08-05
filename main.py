@@ -3,6 +3,8 @@
     langchain 0.2.x 이상
     langsmith 0.1.x 이상
 """
+import os
+
 import streamlit as st
 import re
 from PyPDF2 import PdfReader
@@ -19,9 +21,17 @@ from langchain_core.pydantic_v1 import BaseModel, Field
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import PromptTemplate
 import openai
+import requests
 from itertools import chain
 from styles import css, user_template, ai_template
 
+def get_data(city):
+    open_weather_api_url = "https://api.openweathermap.org/data/2.5/weather?"
+    url = open_weather_api_url + "q=" + city + "&appid=" + os.environ["WEATHER_KEY"]
+    print(url)
+    response = requests.get(url)
+
+    return response.json()
 
 def init():
     # API 키 정보 로드
@@ -102,6 +112,7 @@ def create_audio_chain(api_key):
         subject: str = Field(description="제목으로 활용할 전체 내용 요약 짧은 한 줄")
         summary: str = Field(description="날씨 내용을 요약한 텍스트인데 4줄 안으로 요약")
         special_note: str = Field(description="특별히 강조를 해야 하는 부분")
+        special_city: str = Field(description="특별히 강조를 해야 하는 주요 도시인데 영문명 도시로 표시")
 
     audio_prompt = PromptTemplate.from_template(
         """
@@ -207,17 +218,17 @@ def main():
         # 사이드바 생성
         selected_prompt = create_sidebar()
         audio_file = st.sidebar.file_uploader("업로드 오디오", type=["wav", "mp3", "m4a"])
-        if st.sidebar.button('transcribe audio'):
+        if st.sidebar.button('STT 실행'):
             if audio_file is not None:
-                print(audio_file)
-                st.sidebar.success('Transcribe Audio')
-                openai.api_key = st.session_state["api_key"]
-                transcription = openai.audio.transcriptions.create(
-                    model="whisper-1",
-                    file=audio_file
-                )
-                st.sidebar.success('Transcription complete')
-                st.markdown(transcription.text)
+                with st.spinner("STT 처리중"):
+                    print(audio_file)
+                    openai.api_key = st.session_state["api_key"]
+                    transcription = openai.audio.transcriptions.create(
+                        model="whisper-1",
+                        file=audio_file
+                    )
+                    st.sidebar.success('STT 완료')
+                    st.markdown(transcription.text)
                 response = audio_chain.invoke({"scripts": transcription.text})
                 print(response)
                 response.summary = response.summary.replace('. ', '.\n')
@@ -227,11 +238,33 @@ def main():
                     f"caster='{response.caster}'\n"
                     f"subject='{response.subject}'\n"
                     f"summary='{response.summary}'\n"
-                    f"special_note='{response.special_note}'"
+                    f"special_note='{response.special_note}'\n"
+                    f"special_city='{response.special_city}'"
                 )
                 st.markdown(f"```text\n{output}\n```")
+                print(get_data(response.special_city))
+                w_data = get_data(response.special_city)
+
+                if w_data["cod"] != 404:
+                    with st.container():
+                        st.text(f"현재 {response.special_city} 도시의 날씨")
+
+                        # 두 개의 열로 나누기
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.metric("온도", f"{w_data['main']['temp'] - 273.15:.2f} °C")
+                            st.metric("체감 온도", f"{w_data['main']['feels_like'] - 273.15:.2f} °C")
+                            st.metric("습도", f"{w_data['main']['humidity']} %")
+                        with col2:
+                            st.metric("기압", f"{w_data['main']['pressure']} hPa")
+                            st.metric("풍속", f"{w_data['wind']['speed']} m/s")
+
+                        # 상자 닫기
+                        st.write('</div>', unsafe_allow_html=True)
+                else:
+                    st.error('날씨 에러')
             else:
-                st.sidebar.error("please upload an audio file")
+                st.sidebar.error("오디오 파일을 업로드해주세요.")
         # 이전 대화 기록 출력
         print_messages()
 
