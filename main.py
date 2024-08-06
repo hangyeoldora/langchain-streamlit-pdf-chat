@@ -36,10 +36,10 @@ def get_data(city):
 def init():
     # API 키 정보 로드
     # load_dotenv()
-    st.set_page_config(page_title="1주차", page_icon=":sparkles:")
+    st.set_page_config(page_title="2주차", page_icon=":sparkles:")
     # css 추가
     st.write(css, unsafe_allow_html=True)
-    st.title(":sparkles: langchain pdf 챗봇 1주차 :sparkles:")
+    st.title(":sparkles: langchain 챗봇 2주차 :sparkles:")
 
 # 이전 대화를 출력
 def print_messages():
@@ -112,7 +112,7 @@ def create_audio_chain(api_key):
         subject: str = Field(description="제목으로 활용할 전체 내용 요약 짧은 한 줄")
         summary: str = Field(description="날씨 내용을 요약한 텍스트인데 4줄 안으로 요약")
         special_note: str = Field(description="특별히 강조를 해야 하는 부분")
-        special_city: str = Field(description="특별히 강조를 해야 하는 주요 도시인데 영문명 도시로 표시")
+        special_city: str = Field(description="특별히 강조를 해야 하는 주요 도시 한 곳만 선정하고 영문명 도시로 표시")
 
     audio_prompt = PromptTemplate.from_template(
         """
