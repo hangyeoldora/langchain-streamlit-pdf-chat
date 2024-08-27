@@ -9,7 +9,7 @@ import streamlit as st
 import re
 from PyPDF2 import PdfReader
 from langchain_core.messages.chat import ChatMessage
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import ChatOpenAI
 from langchain_core.output_parsers import StrOutputParser
 from langchain_teddynote.prompts import load_prompt
@@ -20,14 +20,17 @@ from langchain.text_splitter import CharacterTextSplitter
 from langchain_core.pydantic_v1 import BaseModel, Field
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import PromptTemplate
+from langchain_community.chat_message_histories import ChatMessageHistory
+from langchain_core.chat_history import BaseChatMessageHistory
+from langchain_core.runnables.history import RunnableWithMessageHistory
 import openai
 import requests
-from itertools import chain
 from styles import css, user_template, ai_template
 
 def get_data(city):
     open_weather_api_url = "https://api.openweathermap.org/data/2.5/weather?"
-    url = open_weather_api_url + "q=" + city + "&appid=" + os.environ["WEATHER_KEY"]
+    url = open_weather_api_url + "q=" + city + "&appid=" + "d966d192e5c55c758dae300cf578b3a3"
+    # os.environ["WEATHER_KEY"]
     print(url)
     response = requests.get(url)
 
@@ -36,10 +39,20 @@ def get_data(city):
 def init():
     # API 키 정보 로드
     # load_dotenv()
-    st.set_page_config(page_title="2주차", page_icon=":sparkles:")
+    st.set_page_config(page_title="5주차", page_icon=":sparkles:")
     # css 추가
     st.write(css, unsafe_allow_html=True)
-    st.title(":sparkles: langchain 챗봇 2주차 :sparkles:")
+    st.title(":sparkles: langchain 챗봇 5주차 :sparkles:")
+
+# 캐싱
+if "store" not in st.session_state:
+    st.session_state["store"] = {}
+
+# 세션 ID를 기반으로 세력 기록 가져옴
+def get_session_history(session_ids):
+    if session_ids not in st.session_state["store"]:  # 세션 ID가 store에 없는 경우
+        st.session_state["store"][session_ids] = ChatMessageHistory()
+    return st.session_state["store"][session_ids]
 
 # 이전 대화를 출력
 def print_messages():
@@ -76,6 +89,7 @@ def create_chain(prompt_type, api_key):
         prompt = ChatPromptTemplate.from_messages(
             [
                 ("system", "당신은 친절한 AI 어시스턴트입니다. 다음의 질문에 간결하게 답변해 주세요."),
+                MessagesPlaceholder(variable_name="chat_history"),
                 ("user", "#Question:\n{question}"),
             ]
         )
@@ -84,6 +98,7 @@ def create_chain(prompt_type, api_key):
             [
                 ("system", "당신은 친절한 AI 어시스턴트입니다. 다음의 질문에 간결하게 답변해 주세요."),
                 ("user", "#Question:\n{question}\n\n#Documents:\n{input_documents}"),
+                MessagesPlaceholder(variable_name="chat_history"),
                 ("assistant", "답변을 시작하세요.")
             ]
         )
@@ -101,8 +116,17 @@ def create_chain(prompt_type, api_key):
     output_parser = StrOutputParser()
 
     chain = prompt | llm | output_parser
-    return chain
+    chain_with_history = RunnableWithMessageHistory(
+        chain,
+        get_session_history,  # 세션 기록 가져오는 함수
+        input_messages_key="question",  # 사용자 질문이 템플릿 변수에 들어갈 키
+        history_messages_key="chat_history"  # 기록 메세지의 키
+    )
 
+    return chain_with_history
+
+# 세션 ID 변수
+session_id = ""
 
 # 체인 생성
 def create_audio_chain(api_key):
@@ -161,6 +185,7 @@ def create_sidebar():
 
         pdf_data = st.file_uploader("pdf 파일을 업로드하세요.", type="pdf")
 
+
         # session에 pdf 업로드 여부를 체크하는 이유는 user_input 엔터 또는 보내기 클릭 시,
         # 페이지가 재랜더링되어서 업로드된 pdf가 다시 임베딩 과정을 거침
         if pdf_data is not None and not st.session_state.get("pdf_uploaded", False):
@@ -218,6 +243,10 @@ def main():
         # 사이드바 생성
         selected_prompt = create_sidebar()
         audio_file = st.sidebar.file_uploader("업로드 오디오", type=["wav", "mp3", "m4a"])
+
+        # 세션 ID를 지정하는 메뉴
+        session_id = st.sidebar.text_input("세션 ID를 입력하세요.", "abc123")
+
         if st.sidebar.button('STT 실행'):
             if audio_file is not None:
                 with st.spinner("STT 처리중"):
@@ -271,13 +300,16 @@ def main():
         # 사용자의 입력
         user_input = st.chat_input("궁금한 내용을 물어보세요!")
 
+        if "chain" not in st.session_state:
+            st.session_state["chain"] = create_chain(selected_prompt, st.session_state["api_key"])
+
         # 만약 사용자 입력이 들어오면...(엔터)
         if user_input:
             # st.write(f"사용자 입력: {user_input}")
             # 사용자의 입력
             st.write(user_template.replace("{{MSG}}", user_input), unsafe_allow_html=True)
             # chain 생성
-            chain = create_chain(selected_prompt, st.session_state["api_key"])
+            chain_with_history = st.session_state["chain"]
 
             if st.session_state["vector_data"] is not None:
                 faiss_db = st.session_state["vector_data"]
@@ -293,9 +325,11 @@ def main():
                 # retriever 방법은 여러 번 사용해봤기 때문에 similarity_search 적용
                 docs = faiss_db.similarity_search(user_input)
                 print(docs)
-                response = chain.stream({"question": user_input, "input_documents": docs})
+                response = chain_with_history.stream({"question": user_input, "input_documents": docs},
+                                                     config={"configurable": {"session_id": session_id}})
             else:
-                response = chain.stream({"question": user_input})
+                response = chain_with_history.stream({"question": user_input},
+                                                     config={"configurable": {"session_id": session_id}})
 
             # html template 내의 MSG 값만 변경해야하기 때문에 container 생성
             with st.container():
@@ -308,11 +342,10 @@ def main():
                     full_html = ai_template.replace("{{MSG}}", formatted_message)
                     container.write(full_html, unsafe_allow_html=True)
 
-            """
-                유저가 질문 던짐 -> with로 열면 ai 채팅 공간 껍데기를 만듬
-                st.empty 하는 순간 공간(메시지 입력할 타겟) 생성
-                아래는 기존 테디 강의에 나온 답변 stream 처리 코드
-            """
+
+            # 유저가 질문 던짐 -> with로 열면 ai 채팅 공간 껍데기를 만듬
+            # st.empty 하는 순간 공간(메시지 입력할 타겟) 생성
+            # 아래는 기존 테디 강의에 나온 답변 stream 처리 코드
             # with st.chat_message("assistant"):
             #     # 빈 공간(컨테이너)을 만들어서, 여기에 토큰을 스트리밍 출력
             #     container = st.empty()
